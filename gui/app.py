@@ -5,7 +5,7 @@ Main PySide6 application setup and layout using Fluent Widgets.
 import threading
 import sys
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
-from PySide6.QtCore import Qt, QSize, QThread
+from PySide6.QtCore import Qt, QSize, QThread, QTimer
 from PySide6.QtGui import QIcon
 
 from qfluentwidgets import (
@@ -17,7 +17,7 @@ from gui.handlers import ChatHandlers
 from core.model_manager import unload_all_models
 from core.voice_assistant import voice_assistant
 from core.tts import tts
-from config import VOICE_ASSISTANT_ENABLED, GREEN, RESET
+from config import VOICE_ASSISTANT_ENABLED, STT_RECORD_TIMEOUT, GREEN, RESET
 
 from gui.styles import AURA_STYLESHEET 
 
@@ -137,6 +137,7 @@ class MainWindow(FluentWindow):
             print(f"{GREEN}[App] Showing voice indicator...{RESET}")
             # Use system monitor's simple indicator instead of overlay
             self.system_monitor.show_listening()
+            QTimer.singleShot(int(STT_RECORD_TIMEOUT * 1000), self.system_monitor.hide_listening)
             print(f"{GREEN}[App] ✓ Voice indicator shown{RESET}")
         else:
             print(f"{GRAY}[App] Voice assistant disabled in config{RESET}")
@@ -150,7 +151,6 @@ class MainWindow(FluentWindow):
         """Handle processing finished - hide listening indicator."""
         if VOICE_ASSISTANT_ENABLED:
             # Small delay before hiding
-            from PySide6.QtCore import QTimer
             QTimer.singleShot(500, lambda: self.system_monitor.hide_listening())
     
     def _on_voice_timer_set(self, seconds: int, label: str):

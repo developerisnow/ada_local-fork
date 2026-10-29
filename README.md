@@ -134,6 +134,37 @@ python main.py
 
 🎉 **That's it!** A.D.A will launch with a beautiful GUI.
 
+
+### Isolated Windows test runtime
+
+Verified with CPython 3.11.9, CPU PyTorch 2.6.0, PySide6 6.12.0,
+Transformers 4.57.6, RealtimeSTT 1.1.2 and Piper 1.8.0.
+Use a dedicated virtual environment and keep bundled databases/logs out of
+the runtime data directory. Start Ollama with its own model directory and
+loopback port: A.D.A's model lifecycle can unload models on its configured server.
+
+```powershell
+$env:ADA_OLLAMA_URL = "http://127.0.0.1:11435/api"
+$env:ADA_KASA_ENABLED = "0"
+$env:ADA_VOICE_ENABLED = "0"
+python main.py
+```
+
+These flags disable device discovery/control and background microphone listening.
+They do not disable the Chat voice-output toggle. Piper uses the executable
+installed by `piper-tts`; activate the virtual environment so it is on `PATH`.
+Router snapshots must include `chat_template.jinja`, not only model weights.
+
+Planner and today's chat context use **local SQLite**, not Google Calendar.
+Each chat/voice request gets a fresh local-day calendar snapshot. The model
+can still misclassify actions or parse event times incorrectly; verify writes
+before using real appointments or device control.
+
+For synthetic audio diagnostics only, `ADA_TTS_CAPTURE_DIR` saves the PCM sent
+to playback as WAV files. It captures every spoken response while set.
+Unset it for normal/private use. A WAV and successful playback call do not
+prove that a physical speaker or microphone works.
+
 ---
 
 ## 🎮 GPU Acceleration
@@ -203,12 +234,20 @@ Edit `config.py` to customize:
 # Change wake word (default: "jarvis")
 WAKE_WORD = "jarvis"
 
-# Adjust sensitivity (0.0-1.0, lower = less false positives)
+# Porcupine-only sensitivity; not used by the default transcript wake gate
 WAKE_WORD_SENSITIVITY = 0.4
 
 # Enable/disable voice assistant
 VOICE_ASSISTANT_ENABLED = True
 ```
+
+With `USE_PORCUPINE_WAKE_WORD = False`, local Whisper must transcribe the
+whole configured wake word. A bare wake word arms one follow-up utterance
+for `STT_RECORD_TIMEOUT` seconds; the recording must begin inside that window.
+This avoids a Porcupine account/key but depends on transcription accuracy.
+Russian transliterations are not equivalent to the configured English word.
+CPU-only installations use int8 transcription.
+
 
 ---
 
@@ -392,8 +431,8 @@ A.D.A supports **TP-Link Kasa** smart devices:
 
 **Solution**:
 1. Check your microphone permissions
-2. Ensure `realtimestt` is installed: `pip install realtimestt`
-3. Try lowering `WAKE_WORD_SENSITIVITY` in `config.py`
+2. Install the transcription backend: `pip install "realtimestt[faster-whisper]>=1.1.2"`
+3. Verify the default input device and whether Whisper recognizes the configured wake word.
 
 </details>
 

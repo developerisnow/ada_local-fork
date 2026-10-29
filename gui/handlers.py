@@ -3,7 +3,7 @@ import json
 import re
 
 from config import RESPONDER_MODEL, OLLAMA_URL, MAX_HISTORY
-from core.llm import route_query, should_bypass_router, http_session
+from core.llm import route_query, should_bypass_router, http_session, calendar_context_message
 from core.tts import tts, SentenceBuffer
 from core.history import history_manager
 from core.model_manager import ensure_exclusive_qwen
@@ -190,7 +190,7 @@ class ChatWorker(QObject):
         
         payload = {
             "model": model,
-            "messages": self.messages,
+            "messages": [self.messages[0], calendar_context_message(), *self.messages[1:]],
             "stream": True,
             "think": enable_thinking,  # Enable thinking for web_search
             "keep_alive": "5m"  # Longer keep-alive for voice assistant
@@ -260,7 +260,7 @@ class ChatWorker(QObject):
         
         payload = {
             "model": model,
-            "messages": self.messages,
+            "messages": [self.messages[0], calendar_context_message(), *self.messages[1:]],
             "stream": True,
             "think": enable_thinking,
             "keep_alive": "5m"  # Longer keep-alive for voice assistant

@@ -24,7 +24,7 @@ pygments>=2.15.0               # Syntax highlighting for code blocks
 # -----------------------------------------------------
 # NOTE: Install PyTorch with CUDA separately from pytorch.org
 # torch>=2.6.0                 # PyTorch (install with CUDA from pytorch.org)
-transformers>=4.57.0           # Hugging Face transformers for router model
+transformers>=4.57.0,<5        # Router uses the Transformers 4 model API
 accelerate>=1.12.0             # Optimized model loading and inference
 safetensors>=0.7.0             # Fast model weight loading
 
@@ -35,7 +35,7 @@ piper-tts>=1.4.0               # Local text-to-speech engine (Piper TTS)
 sounddevice>=0.5.0             # Audio playback interface
 soundfile>=0.13.0              # Audio file I/O
 numpy>=2.0.0                   # Numerical computing (audio processing)
-realtimestt>=0.3.0             # Real-time speech-to-text with wake word detection
+realtimestt[faster-whisper]>=1.1.2 # Include the local transcription backend
 PyAudio>=0.2.14                # Audio I/O for microphone access
 
 # -----------------------------------------------------

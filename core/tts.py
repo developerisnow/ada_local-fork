@@ -1,19 +1,18 @@
 """
-TTS (Text-to-Speech) module using Piper TTS executable.
+TTS (Text-to-Speech) using the installed Piper CLI.
 Provides streaming sentence-based synthesis with interrupt support.
-Uses pre-built Piper Windows executable for full Windows compatibility.
 """
 
-import io
 import os
 import re
 import queue
 import shutil
 import subprocess
 import threading
-import zipfile
 import requests
 from pathlib import Path
+import time
+import wave
 
 import numpy as np
 import sounddevice as sd
@@ -27,6 +26,11 @@ RESET = "\033[0m"
 
 # HTTP session for downloads
 http_session = requests.Session()
+
+
+def _speech_text(text):
+    """Remove paired bold markers without changing arithmetic operators."""
+    return re.sub(r"(?<!\w)\*\*(\S(?:.*?\S)?)\*\*(?!\w)", r"\1", text, flags=re.DOTALL).strip()
 
 
 class SentenceBuffer:
@@ -63,15 +67,11 @@ class SentenceBuffer:
 
 
 class PiperTTS:
-    """Piper TTS wrapper using pre-built executable for Windows compatibility."""
+    """Piper TTS wrapper using the CLI installed by piper-tts."""
     
     VOICE_MODEL = "en_GB-northern_english_male-medium"
     MODEL_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx"
     CONFIG_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx.json"
-    
-    # Piper Windows executable
-    PIPER_VERSION = "2023.11.14-2"
-    PIPER_RELEASE_URL = f"https://github.com/rhasspy/piper/releases/download/{PIPER_VERSION}/piper_windows_amd64.zip"
     
     def __init__(self):
         self.enabled = False
@@ -86,58 +86,12 @@ class PiperTTS:
         self.current_process = None
         self.available = True  # We'll check during initialize
     
-    def _download_piper_executable(self):
-        """Download and extract Piper Windows executable."""
-        piper_exe_dir = self.piper_dir / "piper_windows"
-        piper_exe = piper_exe_dir / "piper.exe"
-        
-        if piper_exe.exists():
-            print(f"{GREEN}[TTS] ✓ Piper executable found{RESET}")
-            return str(piper_exe)
-        
-        print(f"{CYAN}[TTS] Downloading Piper executable...{RESET}")
-        self.piper_dir.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            r = http_session.get(self.PIPER_RELEASE_URL, stream=True)
-            r.raise_for_status()
-            
-            # Download to memory and extract
-            zip_data = io.BytesIO()
-            total_size = int(r.headers.get('content-length', 0))
-            downloaded = 0
-            
-            for chunk in r.iter_content(chunk_size=8192):
-                zip_data.write(chunk)
-                downloaded += len(chunk)
-                if total_size > 0:
-                    pct = (downloaded / total_size) * 100
-                    print(f"\r{CYAN}[TTS] Downloading... {pct:.1f}%{RESET}", end="", flush=True)
-            
-            print()  # New line after download
-            
-            # Extract zip
-            zip_data.seek(0)
-            with zipfile.ZipFile(zip_data, 'r') as zf:
-                # Extract to piper_windows directory
-                piper_exe_dir.mkdir(parents=True, exist_ok=True)
-                for member in zf.namelist():
-                    # Extract files, stripping the top-level piper directory
-                    if member.startswith("piper/"):
-                        target_path = piper_exe_dir / member[6:]  # Remove "piper/" prefix
-                        if member.endswith('/'):
-                            target_path.mkdir(parents=True, exist_ok=True)
-                        else:
-                            target_path.parent.mkdir(parents=True, exist_ok=True)
-                            with zf.open(member) as src, open(target_path, 'wb') as dst:
-                                dst.write(src.read())
-            
-            print(f"{GREEN}[TTS] ✓ Piper executable extracted!{RESET}")
-            return str(piper_exe)
-            
-        except Exception as e:
-            print(f"{YELLOW}[TTS] Failed to download Piper executable: {e}{RESET}")
-            return None
+    def _find_piper_executable(self):
+        """Use the declared pip dependency; never download and execute a ZIP."""
+        piper_exe = shutil.which("piper")
+        if not piper_exe:
+            raise RuntimeError("Piper CLI not found; activate the environment with piper-tts installed")
+        return piper_exe
     
     def _download_model(self):
         """Download voice model if not present."""
@@ -165,27 +119,19 @@ class PiperTTS:
         try:
             print(f"{CYAN}[TTS] Initializing Piper TTS (executable mode)...{RESET}")
             
-            # Download/find piper executable
-            self.piper_exe = self._download_piper_executable()
-            if not self.piper_exe:
-                print(f"{YELLOW}[TTS] Could not set up Piper executable{RESET}")
-                self.available = False
-                return False
+            self.piper_exe = self._find_piper_executable()
             
             # Download/find voice model
             self.model_path = self._download_model()
             
             # Test the executable
-            try:
-                result = subprocess.run(
-                    [self.piper_exe, "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                print(f"{CYAN}[TTS] Piper version: {result.stdout.strip()}{RESET}")
-            except Exception as e:
-                print(f"{YELLOW}[TTS] Warning: Could not get Piper version: {e}{RESET}")
+            subprocess.run(
+                [self.piper_exe, "--help"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
             
             # Start the worker thread
             self.running = True
@@ -223,6 +169,7 @@ class PiperTTS:
     
     def _speak_text(self, text):
         """Synthesize and play text using Piper executable."""
+        text = _speech_text(text)
         if not self.piper_exe or not self.model_path or not text.strip():
             return
         
@@ -261,6 +208,15 @@ class PiperTTS:
             
             # Play the audio (Piper outputs 16-bit PCM at 22050 Hz)
             if stdout and not self.interrupt_event.is_set():
+                capture_dir = os.environ.get("ADA_TTS_CAPTURE_DIR")
+                if capture_dir:
+                    target = Path(capture_dir)
+                    target.mkdir(parents=True, exist_ok=True)
+                    with wave.open(str(target / f"tts-{time.time_ns()}.wav"), "wb") as capture:
+                        capture.setnchannels(1)
+                        capture.setsampwidth(2)
+                        capture.setframerate(22050)
+                        capture.writeframes(stdout)
                 audio_data = np.frombuffer(stdout, dtype=np.int16)
                 sd.play(audio_data, samplerate=22050, blocking=True)
                 

@@ -2,9 +2,11 @@
 Centralized configuration for Pocket AI.
 """
 
+import os
+
 # --- Model Configuration ---
 RESPONDER_MODEL = "qwen3:1.7b"
-OLLAMA_URL = "http://localhost:11434/api"
+OLLAMA_URL = os.environ.get("ADA_OLLAMA_URL", "http://localhost:11434/api").rstrip("/")
 LOCAL_ROUTER_PATH = "./merged_model"
 HF_ROUTER_REPO = "nlouis/pocket-ai-router"  # Hugging Face repo for auto-download
 MAX_HISTORY = 20
@@ -31,7 +33,8 @@ STT_CHUNK_SIZE = 4096
 STT_RECORD_TIMEOUT = 5.0  # Maximum seconds to record after wake word
 
 # --- Voice Assistant Configuration ---
-VOICE_ASSISTANT_ENABLED = True
+VOICE_ASSISTANT_ENABLED = os.environ.get("ADA_VOICE_ENABLED", "1") == "1"
+KASA_ENABLED = os.environ.get("ADA_KASA_ENABLED", "1") == "1"
 QWEN_TIMEOUT_SECONDS = 300  # 5 minutes of inactivity before sleep
 QWEN_KEEP_ALIVE = "5m"  # Keep in memory for 5 minutes after last use
 

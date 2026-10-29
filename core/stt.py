@@ -1,13 +1,15 @@
 """
-Speech-to-Text with Wake Word Detection for Voice Assistant.
-Uses RealTimeSTT for real-time transcription with built-in wake word detection.
+Speech-to-text with a local, transcription-based wake word.
+Uses RealTimeSTT for audio segmentation and Whisper transcription.
 """
 
 import threading
+import re
 import time
 from typing import Optional, Callable
 from config import (
     WAKE_WORD, REALTIMESTT_MODEL, WAKE_WORD_SENSITIVITY,
+    USE_PORCUPINE_WAKE_WORD, STT_RECORD_TIMEOUT,
     GRAY, RESET, CYAN, YELLOW, GREEN
 )
 
@@ -15,7 +17,7 @@ from config import (
 class STTListener:
     """
     Real-time STT listener with wake word detection using RealTimeSTT.
-    Uses RealTimeSTT's built-in wake word detection and text() method.
+    Uses transcription gating by default; Porcupine is explicitly opt-in.
     """
     
     def __init__(self, wake_word_callback: Callable, speech_callback: Callable):
@@ -27,13 +29,15 @@ class STTListener:
         # RealTimeSTT recorder
         self.recorder = None
         self.initialized = False
+        self._wake_until = 0.0
+        self._recording_started_at = None
         
         print(f"{CYAN}[STT] Initializing RealTimeSTT listener...{RESET}")
         print(f"{CYAN}[STT] Wake word: '{WAKE_WORD}'{RESET}")
-        print(f"{CYAN}[STT] Detection method: RealTimeSTT built-in wake word detection{RESET}")
+        print(f"{CYAN}[STT] Porcupine enabled: {USE_PORCUPINE_WAKE_WORD}{RESET}")
     
-    def initialize(self) -> bool:
-        """Initialize RealTimeSTT with wake word detection."""
+    def initialize(self, *, use_microphone: bool = True) -> bool:
+        """Initialize ASR; external PCM input can replace the microphone for tests."""
         try:
             from RealtimeSTT import AudioToTextRecorder
             import torch
@@ -49,19 +53,20 @@ class STTListener:
             else:
                 print(f"{YELLOW}[STT] ⚠ CUDA is not available, will use CPU{RESET}")
             
-            print(f"{CYAN}[STT] Initializing AudioToTextRecorder with device='cuda'...{RESET}")
-            
-            # Initialize RealTimeSTT with built-in wake word detection
-            # Using pvporcupine backend since "jarvis" is a predefined Porcupine wake word
+            device = "cuda" if cuda_available else "cpu"
+            print(f"{CYAN}[STT] Initializing AudioToTextRecorder on {device}...{RESET}")
             self.recorder = AudioToTextRecorder(
-                model=REALTIMESTT_MODEL,  # Use configured model (base, small, etc.)
-                language="en",
-                device="cuda",  # Use GPU for faster processing
-                spinner=False,  # Disable spinner for cleaner output
-                wakeword_backend="pvporcupine",  # Use Porcupine for wake word detection
-                wake_words=WAKE_WORD,  # Built-in wake word detection
-                wake_words_sensitivity=WAKE_WORD_SENSITIVITY,  # Sensitivity (0.0-1.0)
+                model=REALTIMESTT_MODEL,
+                language="",
+                device=device,
+                compute_type="default" if cuda_available else "int8",
+                use_microphone=use_microphone,
+                spinner=False,
+                wakeword_backend="pvporcupine" if USE_PORCUPINE_WAKE_WORD else "",
+                wake_words=WAKE_WORD if USE_PORCUPINE_WAKE_WORD else "",
+                wake_words_sensitivity=WAKE_WORD_SENSITIVITY,
                 on_wakeword_detected=self._on_wakeword_detected,
+                on_recording_start=self._on_recording_start,
             )
             
             # Verify device after initialization
@@ -127,35 +132,45 @@ class STTListener:
                 
                 print(f"{GRAY}[STT] ⏳ Waiting for wake word '{WAKE_WORD}'...{RESET}")
                 
-                # recorder.text() blocks until wake word is detected, then returns transcribed text
+                # Transcribe one utterance, then enforce the configured wake boundary.
                 transcription_start = time.time()
                 text = self.recorder.text()
                 transcription_time = time.time() - transcription_start
                 
                 print(f"{CYAN}[STT] ✓ Transcription completed in {transcription_time:.2f}s{RESET}")
-                print(f"{CYAN}[STT] 📝 Raw transcribed text: '{text}'{RESET}")
                 
                 if text and text.strip():
-                    # Remove wake word from the text if present
-                    text_clean = text.replace(WAKE_WORD, "").replace(WAKE_WORD.capitalize(), "").strip()
-                    
-                    print(f"{CYAN}[STT] 🧹 Cleaned text (after removing wake word): '{text_clean}'{RESET}")
-                    
-                    if text_clean:
-                        print(f"{CYAN}[STT] 🔊 Speech recognized: '{text_clean}'{RESET}")
-                        
-                        # Pass transcribed speech to callback
-                        self.speech_callback(text_clean)
-                    else:
-                        print(f"{GRAY}[STT] ⚠ Text is empty after cleaning, skipping...{RESET}")
-                else:
-                    print(f"{GRAY}[STT] ⚠ No text received or text is empty{RESET}")
+                    self._handle_transcription(text, self._recording_started_at)
+                self._recording_started_at = None
                 
         except Exception as e:
             print(f"{GRAY}[STT] Listener error: {e}{RESET}")
             import traceback
             traceback.print_exc()
             self.running = False
+
+    def _on_recording_start(self):
+        self._recording_started_at = time.monotonic()
+
+    def _handle_transcription(self, text: str, started_at: Optional[float] = None):
+        """Dispatch only a wake-word command or its bounded follow-up utterance."""
+        now = time.monotonic()
+        utterance_start = now if started_at is None else started_at
+        match = re.search(r"\b" + re.escape(WAKE_WORD) + r"\b", text, re.IGNORECASE)
+        if USE_PORCUPINE_WAKE_WORD:
+            command = text[match.end():] if match else text
+        elif match:
+            self._on_wakeword_detected()
+            self._wake_until = now + STT_RECORD_TIMEOUT
+            command = text[match.end():]
+        elif utterance_start < self._wake_until:
+            command = text
+        else:
+            return
+        command = command.strip(" \t\r\n,.:;!?")
+        if command:
+            self._wake_until = 0.0
+            self.speech_callback(command)
     
     def stop(self):
         """Stop listening."""
