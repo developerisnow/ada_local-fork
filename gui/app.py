@@ -342,10 +342,13 @@ class MainWindow(FluentWindow):
         """Handle application close event."""
         print("[App] Closing application, unloading models...")
         self.set_status("Closing...")
+        self.system_monitor.shutdown()
+        self.preloader_thread.wait()
         
         # Stop voice assistant
         if VOICE_ASSISTANT_ENABLED:
             voice_assistant.stop()
+        tts.shutdown()
         
         unload_all_models(sync=True)
         event.accept()
