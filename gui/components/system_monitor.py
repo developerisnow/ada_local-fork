@@ -256,11 +256,12 @@ class SystemMonitor(QFrame):
     
     def _init_worker(self):
         """Initialize the background worker and thread."""
-        self.monitor_thread = QThread()
+        self.monitor_thread = QThread(self)
         self.worker = MonitorWorker()
         self.worker.moveToThread(self.monitor_thread)
         
         self.worker.stats_updated.connect(self._on_stats_updated)
+        self.monitor_thread.finished.connect(self.worker.deleteLater)
         
         # Use a timer to trigger collection periodically
         self.timer = QTimer(self)
@@ -339,8 +340,9 @@ class SystemMonitor(QFrame):
             color = "#81c784"  # Green
         label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
-    def __del__(self):
-        """Cleanup thread."""
-        if hasattr(self, 'monitor_thread'):
-            self.monitor_thread.quit()
-            self.monitor_thread.wait()
+    def shutdown(self):
+        """Stop collection before Qt destroys the window and its children."""
+        self.timer.stop()
+        self.hide_listening()
+        self.monitor_thread.quit()
+        self.monitor_thread.wait()

@@ -154,6 +154,8 @@ These flags disable device discovery/control and background microphone listening
 They do not disable the Chat voice-output toggle. Piper uses the executable
 installed by `piper-tts`; activate the virtual environment so it is on `PATH`.
 Router snapshots must include `chat_template.jinja`, not only model weights.
+Normal window close stops the monitor thread and speech worker before Qt
+teardown. A native Windows close/restart smoke verified exit code zero.
 
 Planner and today's chat context use **local SQLite**, not Google Calendar.
 Each chat/voice request gets a fresh local-day calendar snapshot. The model
