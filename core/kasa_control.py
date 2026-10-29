@@ -1,6 +1,7 @@
 import asyncio
 from kasa import Discover, Module
 from typing import List, Dict, Any
+from config import KASA_ENABLED
 
 class KasaManager:
     """
@@ -14,6 +15,10 @@ class KasaManager:
         Scans the network for Kasa devices.
         Returns a dictionary of found devices keyed by IP.
         """
+        if not KASA_ENABLED:
+            self.devices.clear()
+            print("Kasa discovery disabled by ADA_KASA_ENABLED=0")
+            return {}
         print("Discovering Kasa devices...")
         try:
             # Increased timeout for more robust discovery
@@ -51,6 +56,8 @@ class KasaManager:
 
     async def _get_light_module(self, ip: str):
         """Helper to get a fresh device and its light module."""
+        if not KASA_ENABLED:
+            return None, None
         try:
             dev = await Discover.discover_single(ip)
             if dev:
@@ -64,6 +71,8 @@ class KasaManager:
 
     async def turn_on(self, ip: str, dev: Any = None) -> bool:
         """Turns on the device with the given IP. Uses provided device object if available."""
+        if not KASA_ENABLED:
+            return False
         try:
             if dev is None:
                 dev = await Discover.discover_single(ip)
@@ -78,6 +87,8 @@ class KasaManager:
 
     async def turn_off(self, ip: str, dev: Any = None) -> bool:
         """Turns off the device with the given IP. Uses provided device object if available."""
+        if not KASA_ENABLED:
+            return False
         try:
             if dev is None:
                 dev = await Discover.discover_single(ip)
@@ -92,6 +103,8 @@ class KasaManager:
     
     async def set_brightness(self, ip: str, level: int, dev: Any = None) -> bool:
         """Sets brightness (0-100) for the device. Uses provided device object if available."""
+        if not KASA_ENABLED:
+            return False
         try:
             light = None
             if dev:
@@ -111,6 +124,8 @@ class KasaManager:
 
     async def set_hsv(self, ip: str, h: int, s: int, v: int, dev: Any = None) -> bool:
         """Sets HSV color for the device. Uses provided device object if available."""
+        if not KASA_ENABLED:
+            return False
         try:
             light = None
             if dev:

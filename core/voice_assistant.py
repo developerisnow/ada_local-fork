@@ -13,7 +13,7 @@ from config import (
     RESPONDER_MODEL, OLLAMA_URL, MAX_HISTORY, GRAY, RESET, CYAN, GREEN, WAKE_WORD
 )
 from core.stt import STTListener
-from core.llm import route_query, should_bypass_router, http_session
+from core.llm import route_query, should_bypass_router, http_session, calendar_context_message
 from core.model_persistence import ensure_qwen_loaded, mark_qwen_used, unload_qwen
 from core.tts import tts, SentenceBuffer
 from core.function_executor import executor as function_executor
@@ -245,7 +245,7 @@ class VoiceAssistant(QObject):
             # Prepare payload
             payload = {
                 "model": RESPONDER_MODEL,
-                "messages": self.messages,
+                "messages": [self.messages[0], calendar_context_message(), *self.messages[1:]],
                 "stream": True,
                 "think": enable_thinking,
                 "keep_alive": "5m"
@@ -313,7 +313,7 @@ class VoiceAssistant(QObject):
             # Prepare payload
             payload = {
                 "model": RESPONDER_MODEL,
-                "messages": self.messages,
+                "messages": [self.messages[0], calendar_context_message(), *self.messages[1:]],
                 "stream": True,
                 "think": enable_thinking,
                 "keep_alive": "5m"
