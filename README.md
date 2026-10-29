@@ -464,7 +464,8 @@ Contributions are welcome! Here's how to get started:
 
 ## 📜 License
 
-This project is open source. See [LICENSE](LICENSE) for details.
+The upstream snapshot contains no license file. This fork does not add an
+upstream license or claim a separate permission grant.
 
 ---
 
